@@ -181,12 +181,6 @@ def expand_class(cls, key, value, keep_old=True):
     return cls
 
 
-def available_value(value):
-    if isinstance(value, str) or isinstance(value, bytes):
-        return value
-    return str(value)
-
-
 def md5(value):
     return hashlib.md5(json.dumps(value).encode()).hexdigest()
 

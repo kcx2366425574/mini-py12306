@@ -24,10 +24,6 @@ class Station:
                 self.station_kvs[tmp_info[1]] = tmp_info[2]
 
     @classmethod
-    def get_station_by_name(cls, name):
-        return cls.get_station_by(name, 'name')
-
-    @classmethod
     def get_station_by(cls, value, field):
         self = cls()
         for station in self.stations:
