@@ -60,7 +60,6 @@ class Query:
         self.is_ready = True
 
     def start(self):
-        # return # DEBUG
         QueryLog.init_data()
         stay_second(3)
         # 多线程
@@ -69,13 +68,12 @@ class Query:
                 if not self.is_in_thread:
                     self.is_in_thread = True
                     create_thread_and_run(jobs=self.jobs, callback_name='run', wait=Const.IS_TEST)
-                if Const.IS_TEST: return
                 stay_second(self.retry_time)
             else:
-                if not self.jobs: break
+                if not self.jobs:
+                    break
                 self.is_in_thread = False
                 jobs_do(self.jobs, 'run')
-                if Const.IS_TEST: return
 
     def refresh_jobs(self):
         """
@@ -84,8 +82,8 @@ class Query:
         """
         allow_jobs = []
         for job in self.query_jobs:
-            id = md5(job)
-            job_ins = objects_find_object_by_key_value(self.jobs, 'id', id)  # [1 ,2]
+            id_key = md5(job)
+            job_ins = objects_find_object_by_key_value(self.jobs, 'id', id_key)  # [1 ,2]
             if not job_ins:
                 job_ins = self.init_job(job)
                 if Config().QUERY_JOB_THREAD_ENABLED:  # 多线程重新添加
@@ -93,7 +91,8 @@ class Query:
             allow_jobs.append(job_ins)
 
         for job in self.jobs:  # 退出已删除 Job
-            if job not in allow_jobs: job.destroy()
+            if job not in allow_jobs:
+                job.destroy()
 
         QueryLog.print_init_jobs(jobs=self.jobs)
 
@@ -114,14 +113,6 @@ class Query:
             return self
         stay_second(self.retry_time)
         return self.wait_for_ready()
-
-    # @classmethod
-    # def job_by_name(cls, name) -> Job:
-    #     self = cls()
-    #     for job in self.jobs:
-    #         if job.job_name == name:
-    #             return job
-    #     return None
 
     @classmethod
     def job_by_name(cls, name) -> Job:

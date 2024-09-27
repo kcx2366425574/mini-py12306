@@ -140,15 +140,15 @@ class Browser:
             await page.evaluate('JSON.stringify({session_id: csessionid, sig: sig})')
             self.cookies = await page.cookies()
             OrderLog.add_quick_log('滑动验证码识别成功').flush()
-        except Exception as e:
+        except Exception:
             OrderLog.add_quick_log('滑动验证码识别失败').flush()
         try:
             await page.close()
-        except:
+        except Exception:
             pass
         try:
             await browser.close()
-        except:
+        except Exception:
             pass
         return self.cookies, self.post_data
 

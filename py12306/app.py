@@ -15,6 +15,8 @@ from py12306.log.order_log import OrderLog
 
 def app_available_check():
 
+    """检测12306是否可用"""
+
     now = time_now()
     if now.weekday() == 1 and (now.hour > 23 and now.minute > 30 or now.hour < 5):
         CommonLog.add_quick_log(CommonLog.MESSAGE_12306_IS_CLOSED.format(time_now())).flush()
@@ -83,8 +85,8 @@ class App:
 
     @classmethod
     def test_send_notifications(cls):
-        TEST_SEND_MSG = "测试发送信息"
-        TEST_BY_12306 = "By py12306"
+        test_send_msg = "测试发送信息"
+        test_by_12306 = "By py12306"
         if Config().NOTIFICATION_BY_VOICE_CODE:  # 语音通知
             CommonLog.add_quick_log(CommonLog.MESSAGE_TEST_SEND_VOICE_CODE).flush()
             if Config().NOTIFICATION_VOICE_CODE_TYPE == 'dingxin':
@@ -94,27 +96,27 @@ class App:
             Notification.voice_code(Config().NOTIFICATION_VOICE_CODE_PHONE, '张三', voice_content)
         if Config().EMAIL_ENABLED:  # 邮件通知
             CommonLog.add_quick_log(CommonLog.MESSAGE_TEST_SEND_EMAIL).flush()
-            Notification.send_email(Config().EMAIL_RECEIVER, '测试发送邮件', TEST_BY_12306)
+            Notification.send_email(Config().EMAIL_RECEIVER, '测试发送邮件', test_by_12306)
 
         if Config().DINGTALK_ENABLED:  # 钉钉通知
             CommonLog.add_quick_log(CommonLog.MESSAGE_TEST_SEND_DINGTALK).flush()
-            Notification.dingtalk_webhook(TEST_SEND_MSG)
+            Notification.dingtalk_webhook(test_send_msg)
 
         if Config().TELEGRAM_ENABLED:  # Telegram通知
             CommonLog.add_quick_log(CommonLog.MESSAGE_TEST_SEND_TELEGRAM).flush()
-            Notification.send_to_telegram(TEST_SEND_MSG)
+            Notification.send_to_telegram(test_send_msg)
 
         if Config().SERVERCHAN_ENABLED:  # ServerChan通知
             CommonLog.add_quick_log(CommonLog.MESSAGE_TEST_SEND_SERVER_CHAN).flush()
-            Notification.server_chan(Config().SERVERCHAN_KEY, TEST_SEND_MSG, TEST_BY_12306)
+            Notification.server_chan(Config().SERVERCHAN_KEY, test_send_msg, test_by_12306)
 
         if Config().PUSHBEAR_ENABLED:  # PushBear通知
             CommonLog.add_quick_log(CommonLog.MESSAGE_TEST_SEND_PUSH_BEAR).flush()
-            Notification.push_bear(Config().PUSHBEAR_KEY, TEST_SEND_MSG, TEST_BY_12306)
+            Notification.push_bear(Config().PUSHBEAR_KEY, test_send_msg, test_by_12306)
 
         if Config().BARK_ENABLED:  # Bark通知
             CommonLog.add_quick_log(CommonLog.MESSAGE_TEST_SEND_PUSH_BARK).flush()
-            Notification.push_bark(TEST_SEND_MSG)
+            Notification.push_bark(test_send_msg)
 
     @classmethod
     def run_check(cls):
@@ -139,7 +141,7 @@ class Dict(dict):
                 if len(keys[i + 1:]) and isinstance(value, Dict):
                     return value.get(sep.join(keys[i + 1:]), default=default, sep=sep)
                 return value
-            except:
+            except Exception:
                 return self.dict_to_dict(default)
 
     def __getitem__(self, k):

@@ -46,11 +46,7 @@ class Request(HTMLSession):
         if default is None:
             default = {}
         from py12306.app import Dict
-        try:
-            result = self.old_json()
-            return Dict(result)
-        except:
-            return Dict(default)
+        return Dict(default)
 
     def request(self, *args, **kwargs):  # 拦截所有错误
         try:

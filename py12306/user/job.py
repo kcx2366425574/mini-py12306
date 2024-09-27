@@ -1,18 +1,27 @@
 import base64
+import json
 import os
 import pickle
+import re
 import time
 
+from py12306.app import app_available_check
 from py12306.config import Config
 from py12306.helpers.api import (
     API_AUTH_QRCODE_CHECK, API_USER_LOGIN, API_AUTH_QRCODE_BASE64_DOWNLOAD, API_AUTH_UAMTK,
-    API_AUTH_UAMAUTHCLIENT, API_USER_INFO, API_BASE_LOGIN
+    API_AUTH_UAMAUTHCLIENT, API_USER_INFO, API_BASE_LOGIN, API_USER_LOGIN_CHECK, API_USER_PASSENGERS, API_INITDC_URL
 )
-from py12306.helpers.func import time_int, get_interval_num
+from py12306.helpers.event import Event
+from py12306.helpers.func import (
+    time_int, get_interval_num, stay_second, is_number, array_dict_find_by_key_value,
+    dict_find_key_by_value
+)
 from py12306.helpers.notification import Notification
 from py12306.helpers.qrcode import print_qrcode
 from py12306.helpers.request import Request
+from py12306.helpers.type import UserType
 from py12306.log.common_log import CommonLog
+from py12306.log.order_log import OrderLog
 from py12306.log.user_log import UserLog
 from py12306.order.order import Browser
 
@@ -53,6 +62,115 @@ class UserJob:
         self.password = info.get('password')
         self.type = info.get('type')
 
+    def update_user(self):
+        from py12306.user.user import User
+        self.user = User()
+        self.load_user()
+
+    def load_user(self):
+        cookie_path = self.get_cookie_path()
+
+        if os.path.exists(cookie_path):
+            with open(self.get_cookie_path(), 'rb') as f:
+                cookie = pickle.load(f)
+                self.cookie = True
+                self.session.cookies.update(cookie)
+                return self.did_loaded_user()
+        return None
+
+    def check_user_is_login(self):
+        retry = 0
+        while retry < Config().REQUEST_MAX_RETRY:
+            retry += 1
+            response = self.session.get(API_USER_LOGIN_CHECK)
+            is_login = response.json().get('data.is_login', False) == 'Y'
+            if is_login:
+                self.save_user()
+                self.set_last_heartbeat()
+                return self.get_user_info()
+                # 检测应该是不会维持状态，这里再请求下个人中心看有没有用，01-10 看来应该是没用  01-22 有时拿到的状态 是已失效的再加上试试
+            time.sleep(get_interval_num(self.sleep_interval))
+        return False
+
+    def can_access_passengers(self):
+        retry = 0
+        while retry < Config().REQUEST_MAX_RETRY:
+            retry += 1
+            response = self.session.post(API_USER_PASSENGERS)
+            result = response.json()
+            if result.get('data.normal_passengers'):
+                return True
+            else:
+                wait_time = get_interval_num(self.sleep_interval)
+                UserLog.add_quick_log(
+                    UserLog.MESSAGE_TEST_GET_USER_PASSENGERS_FAIL.format(
+                        result.get('messages', CommonLog.MESSAGE_RESPONSE_EMPTY_ERROR), wait_time)).flush()
+                stay_second(wait_time)
+        return False
+
+    def did_loaded_user(self):
+        """
+        恢复用户成功
+        :return:
+        """
+        UserLog.add_quick_log(UserLog.MESSAGE_LOADED_USER.format(self.user_name)).flush()
+        if self.check_user_is_login() and self.can_access_passengers():
+            UserLog.add_quick_log(UserLog.MESSAGE_LOADED_USER_SUCCESS.format(self.user_name)).flush()
+            UserLog.print_welcome_user(self)
+            self.user_did_load()
+            return True
+        else:
+            UserLog.add_quick_log(UserLog.MESSAGE_LOADED_USER_BUT_EXPIRED).flush()
+            self.set_last_heartbeat(0)
+            return False
+
+    def user_did_load(self):
+        """
+        用户已经加载成功
+        :return:
+        """
+        self.is_ready = True
+        if self.user_loaded:
+            return
+        self.user_loaded = True
+        Event().user_loaded({'key': self.key})  # 发布通知
+
+    def run(self):
+        # load user
+        self.update_user()
+        self.start()
+
+    def is_first_time(self):
+        return not os.path.exists(self.get_cookie_path())
+
+    def get_name(self):
+        return self.info.get('user_name', '')
+
+    def check_heartbeat(self):
+        # 心跳检测
+        if self.last_heartbeat and (time_int() - self.last_heartbeat) < Config().USER_HEARTBEAT_INTERVAL:
+            return True
+        # 只有主节点才能走到这
+        if self.is_first_time() or not self.check_user_is_login() or not self.can_access_passengers():
+            if not self.load_user() and not self.handle_login():
+                return
+
+        self.user_did_load()
+        message = UserLog.MESSAGE_USER_HEARTBEAT_NORMAL.format(self.get_name(), Config().USER_HEARTBEAT_INTERVAL)
+        UserLog.add_quick_log(message).flush()
+
+    def start(self):
+        """
+        检测心跳
+        :return:
+        """
+        while self.is_alive:
+            app_available_check()
+
+            self.check_heartbeat()
+
+            stay_second(self.check_interval)
+
     def response_login_check(self, response, **kwargs):
         if response.json().get('data.noLogin') == 'true':
             # relogin
@@ -84,7 +202,7 @@ class UserJob:
             self.session.cookies.update({
                    cookie['name']: cookie['value']
             })
-        response = self.session.post(API_BASE_LOGIN.get('url')+ '?' + post_data)
+        response = self.session.post(API_BASE_LOGIN.get('url') + '?' + post_data)
         result = response.json()
         if result.get('result_code') == 0:  # 登录成功
             """
@@ -132,7 +250,7 @@ class UserJob:
             result = response.json()
             try:
                 result_code = int(result.get('result_code'))
-            except:
+            except Exception:
                 if time_int() - last_time > 300:
                     last_time = time_int()
                     image_uuid, png_path = self.download_code()
@@ -225,6 +343,120 @@ class UserJob:
             if result.get('newapptk'):
                 return result.get('newapptk')
         return False
+
+    def wait_for_ready(self):
+        if self.is_ready:
+            return self
+        UserLog.add_quick_log(UserLog.MESSAGE_WAIT_USER_INIT_COMPLETE.format(self.retry_time)).flush()
+        stay_second(self.retry_time)
+        return self.wait_for_ready()
+
+    def destroy(self):
+        """
+        退出用户
+        :return:
+        """
+        UserLog.add_quick_log(UserLog.MESSAGE_USER_BEING_DESTROY.format(self.user_name)).flush()
+        self.is_alive = False
+
+    def get_user_passengers(self):
+        if self.passengers:
+            return self.passengers
+        response = self.session.post(API_USER_PASSENGERS)
+        result = response.json()
+        if result.get('data.normal_passengers'):
+            self.passengers = result.get('data.normal_passengers')
+            # 将乘客写入到文件
+            with open(Config().USER_PASSENGERS_FILE % self.user_name, 'w', encoding='utf-8') as f:
+                f.write(json.dumps(self.passengers, indent=4, ensure_ascii=False))
+            return self.passengers
+        else:
+            wait_time = get_interval_num(self.sleep_interval)
+            UserLog.add_quick_log(
+                UserLog.MESSAGE_GET_USER_PASSENGERS_FAIL.format(
+                    result.get('messages', CommonLog.MESSAGE_RESPONSE_EMPTY_ERROR), wait_time)).flush()
+            stay_second(wait_time)
+            return self.get_user_passengers()
+
+    def get_passengers_by_members(self, members):
+        """
+        获取格式化后的乘客信息
+        :param members:
+        :return:
+        [{
+            name: '项羽',
+            type: 1,
+            id_card: 0000000000000000000,
+            type_text: '成人',
+            enc_str: 'aaaaaa'
+        }]
+        """
+        self.get_user_passengers()
+        results = []
+        for member in members:
+            is_member_code = is_number(member)
+            if not is_member_code:
+                if member[0] == "*":
+                    audlt = 1
+                    member = member[1:]
+                else:
+                    audlt = 0
+                child_check = array_dict_find_by_key_value(results, 'name', member)
+            if not is_member_code and child_check:
+                new_member = child_check.copy()
+                new_member['type'] = UserType.CHILD
+                new_member['type_text'] = dict_find_key_by_value(UserType.dicts, int(new_member['type']))
+            else:
+                if is_member_code:
+                    passenger = array_dict_find_by_key_value(self.passengers, 'code', member)
+                else:
+                    passenger = array_dict_find_by_key_value(self.passengers, 'passenger_name', member)
+                    if audlt:
+                        passenger['passenger_type'] = UserType.ADULT
+                if not passenger:
+                    UserLog.add_quick_log(
+                        UserLog.MESSAGE_USER_PASSENGERS_IS_INVALID.format(self.user_name, member)).flush()
+                    return False
+                new_member = {
+                    'name': passenger.get('passenger_name'),
+                    'id_card': passenger.get('passenger_id_no'),
+                    'id_card_type': passenger.get('passenger_id_type_code'),
+                    'mobile': passenger.get('mobile_no'),
+                    'type': passenger.get('passenger_type'),
+                    'type_text': dict_find_key_by_value(UserType.dicts, int(passenger.get('passenger_type'))),
+                    'enc_str': passenger.get('allEncStr')
+                }
+            results.append(new_member)
+
+        return results
+
+    def request_init_dc_page(self):
+        """
+        请求下单页面 拿到 token
+        :return:
+        """
+        data = {'_json_att': ''}
+        response = self.session.post(API_INITDC_URL, data)
+        html = response.text
+        token = re.search(r'var globalRepeatSubmitToken = \'(.+?)\'', html)
+        form = re.search(r'var ticketInfoForPassengerForm *= *(\{.+\})', html)
+        order = re.search(r'var orderRequestDTO *= *(\{.+\})', html)
+        # 系统忙，请稍后重试
+        if html.find('系统忙，请稍后重试') != -1:
+            OrderLog.add_quick_log(OrderLog.MESSAGE_REQUEST_INIT_DC_PAGE_FAIL).flush()  # 重试无用，直接跳过
+            return False, False, html
+        try:
+            self.global_repeat_submit_token = token.groups()[0]
+            self.ticket_info_for_passenger_form = json.loads(form.groups()[0].replace("'", '"'))
+            self.order_request_dto = json.loads(order.groups()[0].replace("'", '"'))
+        except Exception:
+            return False, False, html
+
+        slide_val = re.search(r"var if_check_slide_passcode.*='(\d?)'", html)
+        is_slide = False
+        if slide_val:
+            is_slide = int(slide_val[1]) == 1
+        return True, is_slide, html
 
     def download_code(self):
         try:

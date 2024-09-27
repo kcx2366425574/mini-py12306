@@ -21,7 +21,7 @@ class BaseLog:
         return self
 
     @classmethod
-    def flush(cls, sep='\n', end='\n', file=None, exit=False):
+    def flush(cls, sep='\n', end='\n', file=None, exit_flag=False):
         self = cls()
         logs = self.get_logs()
         # 输出到文件
@@ -32,7 +32,7 @@ class BaseLog:
 
         print(*logs, sep=sep, end=end, file=file)
         self.empty_logs(logs)
-        if exit:
+        if exit_flag:
             sys.exit()
 
     def get_logs(self):

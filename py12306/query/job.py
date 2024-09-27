@@ -124,10 +124,11 @@ class Job:
                     response = self.query_by_date(date)
                     self.handle_response(response)
                     QueryLog.add_query_time_log(time=response.elapsed.total_seconds(), is_cdn=self.is_cdn)
-                    if not self.is_alive: return
+                    if not self.is_alive:
+                        return
                     self.safe_stay()
                     if is_main_thread():
-                        QueryLog.flush(sep='\t\t', publish=False)
+                        QueryLog.flush(sep='\t\t')
             if not Config().QUERY_JOB_THREAD_ENABLED:
                 QueryLog.add_quick_log('').flush(publish=False)
                 break
@@ -171,7 +172,7 @@ class Job:
         小黑屋判断
         座位判断
         乘车人判断
-        :param result:
+        :param response:
         :return:
         """
         results = self.get_results(response)

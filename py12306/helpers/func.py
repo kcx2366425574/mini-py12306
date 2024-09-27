@@ -40,14 +40,14 @@ def singleton(cls):
 # 初始化间隔
 def init_interval_by_number(number):
     if isinstance(number, dict):
-        min = float(number.get('min'))
-        max = float(number.get('max'))
+        min_value = float(number.get('min'))
+        max_value = float(number.get('max'))
     else:
-        min = number / 2
-        max = number
+        min_value = number / 2
+        max_value = number
     return {
-        'min': min,
-        'max': max
+        'min': min_value,
+        'max': max_value
     }
 
 
@@ -78,8 +78,8 @@ def timestamp_to_time(timestamp):
     return time.strftime('%Y-%m-%d %H:%M:%S', time_struct)
 
 
-def get_file_modify_time(filePath):
-    timestamp = os.path.getmtime(filePath)
+def get_file_modify_time(file_path):
+    timestamp = os.path.getmtime(file_path)
     return timestamp_to_time(timestamp)
 
 
@@ -136,7 +136,8 @@ def create_thread_and_run(jobs, callback_name, wait=True, daemon=True, args=(), 
 
 
 def jobs_do(jobs, do):
-    if not isinstance(jobs, list): jobs = [jobs]
+    if not isinstance(jobs, list):
+        jobs = [jobs]
     for job in jobs:
         getattr(job, do)()
 
@@ -155,7 +156,8 @@ def dict_count_key_num(data: dict, key, like=False):
     count = 0
     for k in data.keys():
         if like:
-            if k.find(key) >= 0: count += 1
+            if k.find(key) >= 0:
+                count += 1
         elif k == key:
             count += 1
     return count
@@ -167,11 +169,13 @@ def array_dict_find_by_key_value(data, key, value, default=None):
 
 
 def get_true_false_text(value, true='', false=''):
-    if value: return true
+    if value:
+        return true
     return false
 
+
 def expand_class(cls, key, value, keep_old=True):
-    if (keep_old):
+    if keep_old:
         setattr(cls, 'old_' + key, getattr(cls, key))
     setattr(cls, key, MethodType(value, cls))
     return cls

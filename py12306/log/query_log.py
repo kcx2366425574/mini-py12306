@@ -55,7 +55,7 @@ class QueryLog(BaseLog):
                 result = f.read()
                 try:
                     result = json.loads(result)
-                except json.JSONDecodeError as e:
+                except json.JSONDecodeError:
                     result = {}
 
         if result:
@@ -118,9 +118,8 @@ class QueryLog(BaseLog):
     def print_ticket_available(cls, left_date, train_number, rest_num):
         self = cls()
         self.add_quick_log('检查完成 开始提交订单 '.format())
-        self.notification('查询到可用车票', '时间 {left_date} 车次 {train_number} 余票数量 {rest_num}'.format(left_date=left_date,
-                                                                                               train_number=train_number,
-                                                                                               rest_num=rest_num))
+        self.notification('查询到可用车票', '时间 {left_date} 车次 {train_number} 余票数量 {rest_num}'.format(
+            left_date=left_date, train_number=train_number, rest_num=rest_num))
         self.flush()
         return self
 
